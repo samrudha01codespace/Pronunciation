@@ -74,18 +74,26 @@ public class PronunciationAssessment {
                         JSONObject pronunciationAssessment = word.optJSONObject("PronunciationAssessment");
                         if (pronunciationAssessment != null) {
                             double accuracyScore = pronunciationAssessment.optDouble("AccuracyScore", 0);
-                            double fluencyScore = pronunciationAssessment.optDouble("FluencyScore", 0);
-                            double prosodyScore = pronunciationAssessment.optDouble("ProsodyScore", 0);
-                            double completenessScore = pronunciationAssessment.optDouble("CompletenessScore", 0);
+
+                            // Access FluencyScore, ProsodyScore, and CompletenessScore
+                            JSONObject fluencyScoreObj = pronunciationAssessment.optJSONObject("FluencyScore");
+                            JSONObject prosodyScoreObj = pronunciationAssessment.optJSONObject("ProsodyScore");
+                            JSONObject completenessScoreObj = pronunciationAssessment.optJSONObject("CompletenessScore");
+
+                            // Extract scores if objects are not null
+                            double fluencyScore = fluencyScoreObj != null ? fluencyScoreObj.optDouble("Score", 0) : 0;
+                            double prosodyScore = prosodyScoreObj != null ? prosodyScoreObj.optDouble("Score", 0) : 0;
+                            double completenessScore = completenessScoreObj != null ? completenessScoreObj.optDouble("Score", 0) : 0;
+
                             parsedResult.append("Word: ").append(wordText).append("\n")
-                                    .append("Pronunciation Assessment: ").append(prosodyScore).append("\n")
+                                    .append("Pronunciation Assessment:\n")
                                     .append("Accuracy Score: ").append(accuracyScore).append("\n")
                                     .append("Fluency Score: ").append(fluencyScore).append("\n")
+                                    .append("Prosody Score: ").append(prosodyScore).append("\n")
                                     .append("Completeness Score: ").append(completenessScore).append("\n\n");
-
                         } else {
                             parsedResult.append("Word: ").append(wordText).append("\n")
-                                    .append("Pronunciation Assessment    data not found.").append("\n\n");
+                                    .append("Pronunciation Assessment data not found.").append("\n\n");
                         }
                     }
                 } else {
