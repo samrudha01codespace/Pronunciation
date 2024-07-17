@@ -1,120 +1,132 @@
 package com.samrudhasolutions.pronunciation;
 
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
-
-import android.Manifest;
-import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.util.Log;
-import android.view.View;
-import android.widget.Button;
 import android.widget.TextView;
+import androidx.appcompat.app.AppCompatActivity;
+import com.microsoft.cognitiveservices.speech.*;
+import com.microsoft.cognitiveservices.speech.audio.AudioConfig;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Semaphore;
 
 public class MainActivity extends AppCompatActivity {
-
-    private static final String TAG = "MainActivity";
-    private Button btnStartRecording, btnStopRecording;
-    private TextView tvAssessmentResult;
-    private RecordAudio.AudioRecorderRunnable audioRecorderRunnable;
-    private Thread audioThread;
-
-    private static final String subscriptionKey = "d68a03a87471470f928cc488abe545ff";
-    private static final String serviceRegion = "centralindia";
-    private static final String lang = "en-US";
-    private static final String referenceText = "Hi I am Samrudha"; // The text against which the pronunciation will be assessed
+    private static final String TAG = "PronunciationAssessment";
+    private Semaphore stopRecognitionSemaphore;
+    private TextView resultsTextView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        btnStartRecording = findViewById(R.id.btnStartRecording);
-        btnStopRecording = findViewById(R.id.btnStopRecording);
-        tvAssessmentResult = findViewById(R.id.tvAssessmentResult);
+        resultsTextView = findViewById(R.id.resultsTextView);
+        startPronunciationAssessment();
+    }
 
-        btnStartRecording.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                startRecording();
+    private void startPronunciationAssessment() {
+        try {
+            pronunciationAssessmentWithAudioFile();
+        } catch (ExecutionException | InterruptedException e) {
+            Log.e(TAG, "Error during pronunciation assessment", e);
+        }
+    }
+
+    public void pronunciationAssessmentWithAudioFile() throws ExecutionException, InterruptedException {
+        SpeechConfig config = SpeechConfig.fromSubscription("d68a03a87471470f928cc488abe545ff", "centralindia");
+        String lang = "en-US";
+
+        // Copy audio file from raw resources to a temporary file
+        File tempAudioFile = copyAudioFileToTemp();
+        AudioConfig audioInput = AudioConfig.fromWavFileInput(tempAudioFile.getAbsolutePath());
+
+        stopRecognitionSemaphore = new Semaphore(0);
+        List<Double> fluencyScores = new ArrayList<>();
+        List<Double> accuracyScores = new ArrayList<>();
+        List<Double> completenessScores = new ArrayList<>();
+        List<Double> prosodyScores = new ArrayList<>();
+
+        SpeechRecognizer recognizer = new SpeechRecognizer(config, lang, audioInput);
+
+        recognizer.recognized.addEventListener((s, e) -> {
+            if (e.getResult().getReason() == ResultReason.RecognizedSpeech) {
+                Log.d(TAG, "RECOGNIZED: Text=" + e.getResult().getText());
+                PronunciationAssessmentResult pronResult = PronunciationAssessmentResult.fromResult(e.getResult());
+
+                fluencyScores.add(pronResult.getFluencyScore());
+                accuracyScores.add(pronResult.getAccuracyScore());
+                completenessScores.add(pronResult.getCompletenessScore());
+            } else if (e.getResult().getReason() == ResultReason.NoMatch) {
+                Log.d(TAG, "NOMATCH: Speech could not be recognized.");
             }
         });
 
-        btnStopRecording.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                stopRecording();
-                try {
-                    pronunciationAssessmentWithMic();
-                } catch (ExecutionException | InterruptedException e) {
-                    e.printStackTrace();
-                    Log.e(TAG, "Exception in pronunciationAssessmentWithMic: " + e.getMessage());
-                }
+        recognizer.canceled.addEventListener((s, e) -> {
+            Log.e(TAG, "CANCELED: Reason=" + e.getReason());
+            if (e.getReason() == CancellationReason.Error) {
+                Log.e(TAG, "CANCELED: ErrorCode=" + e.getErrorCode());
+                Log.e(TAG, "CANCELED: ErrorDetails=" + e.getErrorDetails());
             }
+            stopRecognitionSemaphore.release();
         });
-    }
 
-    private void startRecording() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, 1);
-        } else {
-            audioRecorderRunnable = new RecordAudio.AudioRecorderRunnable(this);
-            audioThread = new Thread(audioRecorderRunnable);
-            audioThread.start();
-            btnStartRecording.setVisibility(View.GONE);
-            btnStopRecording.setVisibility(View.VISIBLE);
+        recognizer.sessionStarted.addEventListener((s, e) -> Log.d(TAG, "Session started event."));
+        recognizer.sessionStopped.addEventListener((s, e) -> Log.d(TAG, "Session stopped event."));
+
+        String referenceText = "Today was a beautiful day. We had a great time taking a long walk outside in the morning. \nThe countryside was in full bloom, yet the air was crisp and cold. \nTowards the end of the day, clouds came in, forecasting much needed rain.";
+        PronunciationAssessmentConfig pronunciationConfig = new PronunciationAssessmentConfig(referenceText,
+                PronunciationAssessmentGradingSystem.HundredMark, PronunciationAssessmentGranularity.Word, true);
+
+        pronunciationConfig.applyTo(recognizer);
+
+        recognizer.startContinuousRecognitionAsync().get();
+        stopRecognitionSemaphore.acquire();
+        recognizer.stopContinuousRecognitionAsync().get();
+
+        // Calculate final results
+        double averageFluency = fluencyScores.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+        double averageAccuracy = accuracyScores.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+        double averageCompleteness = completenessScores.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+        double averageProsody = prosodyScores.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+
+        // Prepare result text
+        StringBuilder results = new StringBuilder();
+        results.append("Fluency Score: ").append(averageFluency).append("\n");
+        results.append("Accuracy Score: ").append(averageAccuracy).append("\n");
+        results.append("Completeness Score: ").append(averageCompleteness).append("\n");
+        results.append("Prosody Score: ").append(averageProsody).append("\n");
+
+        Log.d(TAG, results.toString()); // Display results in log
+        resultsTextView.setText(results.toString()); // Set results to TextView
+
+        config.close();
+        audioInput.close();
+        recognizer.close();
+
+        // Clean up the temporary file if needed
+        if (tempAudioFile.exists()) {
+            tempAudioFile.delete();
         }
     }
 
-    private void stopRecording() {
-        if (audioRecorderRunnable != null) {
-            audioRecorderRunnable.stopRecording();
-            try {
-                audioThread.join();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
+    private File copyAudioFileToTemp() {
+        File tempFile = new File(getCacheDir(), "sample.wav");
+        try (InputStream in = getResources().openRawResource(R.raw.sample);
+             FileOutputStream out = new FileOutputStream(tempFile)) {
+            byte[] buffer = new byte[1024];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                out.write(buffer, 0, read);
             }
-            audioRecorderRunnable = null;
-            audioThread = null;
-            btnStartRecording.setVisibility(View.VISIBLE);
-            btnStopRecording.setVisibility(View.GONE);
+        } catch (IOException e) {
+            Log.e(TAG, "Error copying audio file", e);
         }
-    }
-
-    private void pronunciationAssessmentWithMic() throws ExecutionException, InterruptedException {
-        new Thread(() -> {
-            try {
-                String result = PronunciationAssessment.pronunciationAssessmentWithMic(subscriptionKey, serviceRegion, lang, referenceText);
-                Log.d(TAG, "Assessment result: " + result);
-                updateAssessmentResult(result);
-            } catch (Exception ex) {
-                ex.printStackTrace();
-                Log.e(TAG, "Exception in pronunciationAssessmentWithMic: " + ex.getMessage());
-                updateAssessmentResult("Error during assessment. Check logs for details.");
-            }
-        }).start();
-    }
-
-    private void updateAssessmentResult(String result) {
-        runOnUiThread(() -> tvAssessmentResult.setText(result));
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        stopRecording(); // Ensure recording is stopped when activity is destroyed
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == 1 && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            startRecording();
-        } else {
-            Log.e(TAG, "RECORD_AUDIO permission denied.");
-        }
+        return tempFile;
     }
 }

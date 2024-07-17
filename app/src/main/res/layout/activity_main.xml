@@ -1,40 +1,15 @@
-<?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:orientation="vertical"
     android:padding="16dp">
 
-    <Button
-        android:id="@+id/btnStartRecording"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Start Recording"
-        android:layout_centerHorizontal="true" />
-
-    <Button
-        android:id="@+id/btnStopRecording"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Stop Recording"
-        android:layout_below="@id/btnStartRecording"
-        android:layout_centerHorizontal="true"
-        android:layout_marginTop="16dp" />
-
-    <Button
-        android:id="@+id/btnStartAssessment"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Start Assessment"
-        android:layout_below="@id/btnStopRecording"
-        android:layout_centerHorizontal="true"
-        android:layout_marginTop="16dp" />
-
     <TextView
-        android:id="@+id/tvAssessmentResult"
+        android:id="@+id/resultsTextView"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Assessment Result"
-        android:layout_below="@id/btnStartAssessment"
-        android:layout_centerHorizontal="true"
-        android:layout_marginTop="16dp" />
-</RelativeLayout>
+        android:textSize="18sp"
+        android:text="Results will be displayed here" />
+
+</LinearLayout>
