@@ -62,6 +62,7 @@ public class MainActivity extends AppCompatActivity {
                 fluencyScores.add(pronResult.getFluencyScore());
                 accuracyScores.add(pronResult.getAccuracyScore());
                 completenessScores.add(pronResult.getCompletenessScore());
+//              prosodyScores.add(pronResult.getProsodyScore());//getting error just see here
             } else if (e.getResult().getReason() == ResultReason.NoMatch) {
                 Log.d(TAG, "NOMATCH: Speech could not be recognized.");
             }
