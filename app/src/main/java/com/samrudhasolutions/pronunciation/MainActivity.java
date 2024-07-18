@@ -1,16 +1,21 @@
 package com.samrudhasolutions.pronunciation;
 
+import android.Manifest;
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.util.Base64;
 import android.util.Log;
 import android.widget.TextView;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
 import com.microsoft.cognitiveservices.speech.*;
 import com.microsoft.cognitiveservices.speech.audio.AudioConfig;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -20,6 +25,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG = "PronunciationAssessment";
     private Semaphore stopRecognitionSemaphore;
     private TextView resultsTextView;
+    private RecordAudio recordAudio;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -27,7 +33,31 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         resultsTextView = findViewById(R.id.resultsTextView);
-        startPronunciationAssessment();
+        recordAudio = new RecordAudio();
+
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, 1);
+        } else {
+            startRecording();
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == 1 && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            startRecording();
+        }
+    }
+
+    private void startRecording() {
+        recordAudio.startRecording(this);
+
+        // Stop recording after a delay and start the assessment
+        new android.os.Handler().postDelayed(() -> {
+            recordAudio.stopRecording(this);
+            startPronunciationAssessment();
+        }, 10000); // Record for 10 seconds
     }
 
     private void startPronunciationAssessment() {
@@ -42,8 +72,18 @@ public class MainActivity extends AppCompatActivity {
         SpeechConfig config = SpeechConfig.fromSubscription("d68a03a87471470f928cc488abe545ff", "centralindia");
         String lang = "en-US";
 
-        // Copy audio file from raw resources to a temporary file
-        File tempAudioFile = copyAudioFileToTemp();
+        // Get the recorded audio file from SharedPreferences
+        SharedPreferences prefs = getSharedPreferences("com.example.demospeechtotext", Context.MODE_PRIVATE);
+        String base64Audio = prefs.getString("AUDIO", "");
+        byte[] wavData = Base64.decode(base64Audio, Base64.DEFAULT);
+
+        File tempAudioFile = new File(getCacheDir(), "sample.wav");
+        try (FileOutputStream fos = new FileOutputStream(tempAudioFile)) {
+            fos.write(wavData);
+        } catch (IOException e) {
+            Log.e(TAG, "Error writing audio file", e);
+        }
+
         AudioConfig audioInput = AudioConfig.fromWavFileInput(tempAudioFile.getAbsolutePath());
 
         stopRecognitionSemaphore = new Semaphore(0);
@@ -62,7 +102,7 @@ public class MainActivity extends AppCompatActivity {
                 fluencyScores.add(pronResult.getFluencyScore());
                 accuracyScores.add(pronResult.getAccuracyScore());
                 completenessScores.add(pronResult.getCompletenessScore());
-//              prosodyScores.add(pronResult.getProsodyScore());//getting error just see here
+//              prosodyScores.add(pronResult.getProsodyScore()); // Uncomment this if prosody score is supported
             } else if (e.getResult().getReason() == ResultReason.NoMatch) {
                 Log.d(TAG, "NOMATCH: Speech could not be recognized.");
             }
@@ -80,7 +120,7 @@ public class MainActivity extends AppCompatActivity {
         recognizer.sessionStarted.addEventListener((s, e) -> Log.d(TAG, "Session started event."));
         recognizer.sessionStopped.addEventListener((s, e) -> Log.d(TAG, "Session stopped event."));
 
-        String referenceText = "Today was a beautiful day. We had a great time taking a long walk outside in the morning. \nThe countryside was in full bloom, yet the air was crisp and cold. \nTowards the end of the day, clouds came in, forecasting much needed rain.";
+        String referenceText = "Hi I am Samrudha";
         PronunciationAssessmentConfig pronunciationConfig = new PronunciationAssessmentConfig(referenceText,
                 PronunciationAssessmentGradingSystem.HundredMark, PronunciationAssessmentGranularity.Word, true);
 
@@ -114,20 +154,5 @@ public class MainActivity extends AppCompatActivity {
         if (tempAudioFile.exists()) {
             tempAudioFile.delete();
         }
-    }
-
-    private File copyAudioFileToTemp() {
-        File tempFile = new File(getCacheDir(), "sample.wav");
-        try (InputStream in = getResources().openRawResource(R.raw.sample);
-             FileOutputStream out = new FileOutputStream(tempFile)) {
-            byte[] buffer = new byte[1024];
-            int read;
-            while ((read = in.read(buffer)) != -1) {
-                out.write(buffer, 0, read);
-            }
-        } catch (IOException e) {
-            Log.e(TAG, "Error copying audio file", e);
-        }
-        return tempFile;
     }
 }

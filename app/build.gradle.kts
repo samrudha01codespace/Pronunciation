@@ -36,6 +36,7 @@ dependencies {
     implementation (libs.javax.json.api)
     implementation (libs.java.diff.utils)
     implementation (libs.client.sdk)
+
     implementation(libs.appcompat)
     implementation(libs.material)
     implementation(libs.activity)
